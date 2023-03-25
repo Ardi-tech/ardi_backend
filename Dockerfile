@@ -6,6 +6,8 @@ WORKDIR /usr/src/app
 COPY package.json ./
 RUN npm install
 COPY . .
+
+RUN npm cache clean --force
 RUN npm run build
 
 # Build Stage 2
