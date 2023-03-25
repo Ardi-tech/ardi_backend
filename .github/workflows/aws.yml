@@ -1,0 +1,111 @@
+# This workflow will build and push a new container image to Amazon ECR.
+
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ECR repository to store your images.
+#    For example: `aws ecr create-repository --repository-name my-ecr-repo --region us-east-2`.
+#    Replace the value of the `ECR_REPOSITORY` environment variable in the workflow below with your repository's name.
+#    Replace the value of the `AWS_REGION` environment variable in the workflow below with your repository's region.
+#
+# 2. Store an IAM user access key in GitHub Actions secrets named `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+#    See the documentation for each action used below for the recommended IAM policies for this IAM user,
+#    and best practices on handling the access key credentials.
+
+name: Deploy to Amazon ECS
+
+on:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+    branches:
+      - 'develop'
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+      - name: Deploy to EC2 via ssh
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        uses: appleboy/ssh-action@v0.1.4
+        with:
+          host: ec2-54-173-228-252.compute-1.amazonaws.com
+          username: ubuntu
+          port: 22
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          envs: IMAGE_TAG
+          script: |
+            bash /home/ubuntu/deploy.sh ${IMAGE_TAG}
+      # To pass the exit status to the next job, we use this trick: we write the status in the status.txt artifact.
+      - name: Create file status.txt and write the job status into it
+        if: always()
+        run: |
+          echo ${{ job.status }} > status.txt
+      - name: Upload file status.txt as an artifact
+        if: always()
+        uses: actions/upload-artifact@v1
+        with:
+          name: pass_status_to_notification
+          path: status.txt
+
+  notification:
+    needs: ['Deploy']
+    if: ${{always()}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v2
+      - name: Download artifact pass_status_to_notification
+        uses: actions/download-artifact@v1
+        with:
+          name: pass_status_to_notification
+      - name: Set the status of previous job as output parameters
+        id: set_output
+        run: echo "::set-output name=job_status::$(<pass_status_to_notification/status.txt)"
+      - name: failing notification
+        if: ${{ steps.set_output.outputs.job_status == 'failure' }}
+        run: |
+          bash notify.sh ${{secrets.SLACK_WEBHOOK_TOKEN}} "$Failed_Message" "$Failed_Emoji"
+        env:
+          Failed_Message: 'the deploy failed'
+          Failed_Emoji: ':pensive:'
+      - name: success notification
+        if: ${{ steps.set_output.outputs.job_status == 'success' }}
+        run: |
+          bash notify.sh ${{secrets.SLACK_WEBHOOK_TOKEN}} "$Success_Message" "$Success_Emoji"
+        env:
+          Success_Message: 'success deployment'
+          Success_Emoji: ':rocket:'
