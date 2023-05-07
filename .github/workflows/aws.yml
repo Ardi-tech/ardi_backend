@@ -59,16 +59,21 @@ jobs:
       - name: Deploy to EC2 via ssh
         env:
           IMAGE_TAG: ${{ github.sha }}
+          ECR_URL: ec2-54-161-138-195.compute-1.amazonaws.com
+          ECR_REPOSITORY_NAME: ardi_backend
         uses: appleboy/ssh-action@v0.1.4
         with:
-          host: ec2-54-173-228-252.compute-1.amazonaws.com
+          host: ec2-54-161-138-195.compute-1.amazonaws.com
           username: ubuntu
           port: 22
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
-          envs: IMAGE_TAG
+          envs: IMAGE_TAG ECR_URL ECR_REPOSITORY_NAME
           script: |
-            bash /home/ubuntu/deploy.sh ${IMAGE_TAG}
+            bash /home/ubuntu/deploy.sh \
+              -t "${IMAGE_TAG}" \
+              -u "${ECR_URL}" \
+              -n "${ECR_REPOSITORY_NAME}"
       # To pass the exit status to the next job, we use this trick: we write the status in the status.txt artifact.
       - name: Create file status.txt and write the job status into it
         if: always()
