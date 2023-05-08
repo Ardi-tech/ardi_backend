@@ -5,13 +5,18 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 
-@WebSocketGateway()
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+  },
+})
 export class ChatGateway {
   @WebSocketServer() server: Server;
 
   @SubscribeMessage('joinRoom')
   handleJoinRoom(client: Socket, room: string): void {
     client.join(room);
+    console.log('oinRoomSuccess');
     client.emit('joinRoomSuccess', room);
     client.to(room).emit('userJoined', client.id);
   }
