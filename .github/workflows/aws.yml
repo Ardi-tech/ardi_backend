@@ -70,10 +70,7 @@ jobs:
           script_stop: true
           envs: IMAGE_TAG ECR_URL ECR_REPOSITORY_NAME
           script: |
-            bash /home/ubuntu/deploy.sh \
-              -t "${IMAGE_TAG}" \
-              -u "${ECR_URL}" \
-              -n "${ECR_REPOSITORY_NAME}"
+            echo "Hello world"
       # To pass the exit status to the next job, we use this trick: we write the status in the status.txt artifact.
       - name: Create file status.txt and write the job status into it
         if: always()
